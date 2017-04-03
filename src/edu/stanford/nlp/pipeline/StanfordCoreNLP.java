@@ -39,6 +39,12 @@ import edu.stanford.nlp.util.logging.Redwood;
 import edu.stanford.nlp.util.logging.StanfordRedwoodConfiguration;
 // import static edu.stanford.nlp.util.logging.Redwood.Util.*;
 
+import static edu.stanford.nlp.util.logging.Redwood.Util.endTrack;
+import static edu.stanford.nlp.util.logging.Redwood.Util.err;
+import static edu.stanford.nlp.util.logging.Redwood.Util.forceTrack;
+import static edu.stanford.nlp.util.logging.Redwood.Util.log;
+import static edu.stanford.nlp.util.logging.Redwood.Util.warn;
+
 import java.io.*;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -48,6 +54,9 @@ import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
+
+import org.apache.commons.io.FilenameUtils;
+import org.json.JSONObject;
 
 
 
@@ -998,6 +1007,186 @@ public class StanfordCoreNLP extends AnnotationPipeline  {
       }
     };
   }
+  
+
+  public void processJsonFiles(String base, final Collection<File> files, int numThreads) throws IOException {
+	    List<Runnable> toRun = new LinkedList<Runnable>();
+
+	    // Process properties here
+	    final String baseOutputDir = properties.getProperty("outputDirectory", ".");
+	    final String baseInputDir = properties.getProperty("inputDirectory", base);
+
+	    // Set of files to exclude
+	    final String excludeFilesParam = properties.getProperty("excludeFiles");
+	    final Set<String> excludeFiles = new HashSet<String>();
+	    if (excludeFilesParam != null) {
+	      Iterable<String> lines = IOUtils.readLines(excludeFilesParam);
+	      for (String line:lines) {
+	        String name = line.trim();
+	        if (!name.isEmpty()) excludeFiles.add(name);
+	      }
+	    }
+
+	    //(file info)
+	    String defaultExtension = ".json";
+	    final String extension = properties.getProperty("outputExtension", defaultExtension);
+	    final boolean replaceExtension = Boolean.parseBoolean(properties.getProperty("replaceExtension", "false"));
+	    final boolean continueOnAnnotateError = Boolean.parseBoolean(properties.getProperty("continueOnAnnotateError", "false"));
+
+	    final boolean noClobber = Boolean.parseBoolean(properties.getProperty("noClobber", "false"));
+	    final boolean randomize = Boolean.parseBoolean(properties.getProperty("randomize", "false"));
+
+	    final MutableInteger totalProcessed = new MutableInteger(0);
+	    final MutableInteger totalSkipped = new MutableInteger(0);
+	    final MutableInteger totalErrorAnnotating = new MutableInteger(0);
+	    int nFiles = 0;
+
+	    //for each file...
+	    for (final File file : files) {
+	      nFiles++;
+	      // Determine if there is anything to be done....
+	      if (excludeFiles.contains(file.getName())) {
+	        err("Skipping excluded file " + file.getName());
+	        totalSkipped.incValue(1);
+	        continue;
+	      }
+
+	      //--Get Output File Info
+	      //(filename)
+	      String outputDir = baseOutputDir;
+	      if (baseInputDir != null) {
+	        // Get input file name relative to base
+	        String relDir = file.getParent().replaceFirst(Pattern.quote(baseInputDir), "");
+	        outputDir = outputDir + File.separator + relDir;
+	      }
+	      // Make sure output directory exists
+	      new File(outputDir).mkdirs();
+	      String outputFilename = new File(outputDir, file.getName()).getPath();
+	      if (replaceExtension) {
+	        outputFilename = FilenameUtils.removeExtension(outputFilename);
+	      }
+	      
+	      // ensure we don't make filenames with doubled extensions like .xml.xml
+	      if (!outputFilename.endsWith(extension)) {
+	        outputFilename += extension;
+	      }
+	      
+	      String outputFilenameExt = FilenameUtils.getExtension(outputFilename);
+	      outputFilename = FilenameUtils.removeExtension(outputFilename) + ".corenlp.enr." + outputFilenameExt; 
+	      
+	      // normalize filename for the upcoming comparison
+	      outputFilename = new File(outputFilename).getCanonicalPath();
+
+	      //--Conditions For Skipping The File
+	      // TODO this could fail if there are softlinks, etc. -- need some sort of sameFile tester
+	      //      Java 7 will have a Files.isSymbolicLink(file) method
+	      if (outputFilename.equals(file.getCanonicalPath())) {
+	        err("Skipping " + file.getName() + ": output file " + outputFilename + " has the same filename as the input file -- assuming you don't actually want to do this.");
+	        totalSkipped.incValue(1);
+	        continue;
+	      }
+	      if (noClobber && new File(outputFilename).exists()) {
+	        err("Skipping " + file.getName() + ": output file " + outputFilename + " as it already exists.  Don't use the noClobber option to override this.");
+	        totalSkipped.incValue(1);
+	        continue;
+	      }
+
+	      final String finalOutputFilename = outputFilename;
+	      final String tag = properties.getProperty("tag", "text");
+	      //register a task...
+	      toRun.add(() -> {
+	        //catching exceptions...
+	        try {
+	          // Check whether this file should be skipped again
+	          if (noClobber && new File(finalOutputFilename).exists()) {
+	            err("Skipping " + file.getName() + ": output file " + finalOutputFilename + " as it already exists.  Don't use the noClobber option to override this.");
+	            synchronized (totalSkipped) {
+	              totalSkipped.incValue(1);
+	            }
+	            return;
+	          }
+
+	          forceTrack("Processing file " + file.getAbsolutePath() + " ... writing to " + finalOutputFilename);
+
+	          //--Process File
+	          
+	          //String encoding = getEncoding();
+	          //(read file)
+
+	          Iterable<String> lines = IOUtils.readLines(file);
+	          int linectr = 0;
+	          OutputStream fos = new BufferedOutputStream(new FileOutputStream(finalOutputFilename));
+	          PrintStream printfos = new PrintStream(fos);
+	          
+		      for (String line:lines) {	
+		    	  JSONObject obj = new JSONObject(line);
+		    	  String text = (String) obj.get(tag);
+		    	  linectr++;
+		    	  forceTrack("Annotating line " + Integer.toString(linectr));
+		    	  boolean annotationOkay = false;
+		    	  Annotation annotation = null;
+		    	  try {
+		    		  annotation = process(text);
+		    		  annotationOkay = true;
+		          } catch (Exception ex) {
+		            if (continueOnAnnotateError) {
+		              // Error annotating but still wanna continue
+		              // (maybe in the middle of long job and maybe next one will be okay)
+		              err("Error annotating line # " + Integer.toString(linectr), ex);
+		              annotationOkay = false;
+		              synchronized (totalErrorAnnotating) {
+		                totalErrorAnnotating.incValue(1);
+		              }
+		            } else {
+		              throw new RuntimeException("Error annotating " + file.getAbsoluteFile(), ex);
+		            }
+		          } finally {
+		        	  endTrack("Annotating line " + Integer.toString(linectr));
+		          }
+		          
+		          if (annotationOkay) {
+		        	  //--Output line
+		        	  OutputStream lout = new ByteArrayOutputStream();
+		        	  new JSONOutputter().print(annotation, lout);
+		        	  obj.put("corenlp", new JSONObject(lout.toString()));
+		        	  printfos.print(obj.toString());
+		        	  printfos.print("\n");
+		        	  
+		        	  synchronized (totalProcessed) {
+			              totalProcessed.incValue(1);
+			              if (totalProcessed.intValue() % 1000 == 0) {
+			                log("Processed " + totalProcessed + " lines");
+			              }
+			            }
+			      } else {
+			    	  warn("Error annotating line # " + Integer.toString(linectr) + " not saved to " + finalOutputFilename);
+			      }
+	          }
+	          endTrack("Processing file " + file.getAbsolutePath() + " ... writing to " + finalOutputFilename);
+	          fos.close();
+
+	        } catch (IOException e) {
+	          throw new RuntimeIOException(e);
+	        }
+	      });
+	    }
+
+	    if (randomize) {
+	      log("Randomly shuffling input");
+	      Collections.shuffle(toRun);
+	    }
+	    log("Ready to process: " + toRun.size() + " files, skipped " + totalSkipped + ", total " + nFiles);
+	    //--Run Jobs
+	    if(numThreads == 1){
+	      for(Runnable r : toRun){ r.run(); }
+	    } else {
+	      Redwood.Util.threadAndRun("StanfordCoreNLP <" + numThreads + " threads>", toRun, numThreads);
+	    }
+	    log("Processed " + totalProcessed + " documents");
+	    log("Skipped " + totalSkipped + " documents, error annotating " + totalErrorAnnotating + " documents");
+	  }
+
+  
 
   /**
    * A common method for processing a set of files, used in both {@link StanfordCoreNLP} as well as
@@ -1251,7 +1440,11 @@ public class StanfordCoreNLP extends AnnotationPipeline  {
       Collection<File> files = new FileSequentialCollection(new File(fileName), properties.getProperty("extension"), true);
       this.processFiles(null, files, numThreads);
     }
-
+    if (properties.containsKey("injsonfile")) {
+    	String fileName = properties.getProperty("injsonfile");
+        Collection<File> files = new FileSequentialCollection(new File(fileName), properties.getProperty("extension"), true);
+        this.processJsonFiles(null, files, numThreads);
+    }
     //
     // Process a list of files
     //
