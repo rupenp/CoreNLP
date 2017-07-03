@@ -113,8 +113,18 @@ public class JSONOutputter extends AnnotationOutputter {
           writeTriples(l2, "openie", openIETriples);
           // (kbp)
           Collection<RelationTriple> kbpTriples = sentence.get(CoreAnnotations.KBPTriplesAnnotation.class);
-          writeTriples(l2, "kbp", kbpTriples);
 
+          if (kbpTriples != null) {
+            l2.set("kbp", kbpTriples.stream().map(triple -> (Consumer<Writer>) (Writer tripleWriter) -> {
+              tripleWriter.set("subject", triple.subjectGloss());
+              tripleWriter.set("subjectSpan", Span.fromPair(triple.subjectTokenSpan()));
+              tripleWriter.set("relation", triple.relationGloss());
+              tripleWriter.set("relationSpan", Span.fromPair(triple.relationTokenSpan()));
+              tripleWriter.set("object", triple.objectGloss());
+              tripleWriter.set("objectSpan", Span.fromPair(triple.objectTokenSpan()));
+            }));
+          }
+          
           // (entity mentions)
           if (sentence.get(CoreAnnotations.MentionsAnnotation.class) != null) {
             Integer sentTokenBegin = sentence.get(CoreAnnotations.TokenBeginAnnotation.class);

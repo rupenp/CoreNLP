@@ -632,7 +632,7 @@ public class StanfordCoreNLPServer implements Runnable {
             respondUnauthorized(httpExchange);
             return;
           }
-          log("[" + httpExchange.getRemoteAddress() + "] API call w/annotators " + props.getProperty("annotators", "<unknown>"));
+          //log("[" + httpExchange.getRemoteAddress() + "] API call w/annotators " + props.getProperty("annotators", "<unknown>"));
           ann = getDocument(props, httpExchange);
           of = StanfordCoreNLP.OutputFormat.valueOf(props.getProperty("outputFormat", "json").toUpperCase());
           String text = ann.get(CoreAnnotations.TextAnnotation.class).replace('\n', ' ');
@@ -663,6 +663,7 @@ public class StanfordCoreNLPServer implements Runnable {
           int timeoutMilliseconds = Integer.parseInt(props.getProperty("timeout",
                                                      Integer.toString(StanfordCoreNLPServer.this.timeoutMilliseconds)));
           // Check for too long a timeout from an unauthorized source
+          /*
           if (timeoutMilliseconds > 15000) {
             // If two conditions:
             //   (1) The server is running on corenlp.run (i.e., corenlp.stanford.edu)
@@ -673,6 +674,7 @@ public class StanfordCoreNLPServer implements Runnable {
               timeoutMilliseconds = 15000;
             }
           }
+          */
           completedAnnotation = completedAnnotationFuture.get(timeoutMilliseconds, TimeUnit.MILLISECONDS);
         } catch (NumberFormatException e) {
           completedAnnotation = completedAnnotationFuture.get(StanfordCoreNLPServer.this.timeoutMilliseconds, TimeUnit.MILLISECONDS);
