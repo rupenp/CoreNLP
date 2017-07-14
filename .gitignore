@@ -8,3 +8,8 @@
 .settings/**
 /bin/
 /target/
+stanford-corenlp-local-*.jar
+*.icloud
+classes
+.classpath
+.project
