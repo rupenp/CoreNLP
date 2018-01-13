@@ -49,12 +49,18 @@ message Document {
    * This field is for entity mentions across the document.
    */
   repeated NERMention mentions = 9;
+  optional bool hasEntityMentionsAnnotation = 13; // used to differentiate between null and empty list
 
   /**
    * xml information
    */
   optional bool    xmlDoc = 11;
   repeated Section sections = 12;
+
+  /** coref mentions for entire document **/
+  repeated Mention         mentionsForCoref                    = 14;
+  optional bool hasCorefMentionAnnotation = 15;
+  optional bool hasCorefAnnotation = 16;
 
   extensions 100 to 255;
 }
@@ -109,6 +115,8 @@ message Sentence {
   optional string          docID                               = 63;  // doc id
   optional bool            sectionQuoted                       = 64;  // is this sentence in an xml quote in a post
 
+  optional bool            hasEntityMentionsAnnotation         = 65;  // check if there are entity mentions
+
   extensions 100 to 255;
 }
 
@@ -125,6 +133,8 @@ message Token {
   optional string after             = 6;    // The whitespace/xml after the token
   optional string originalText      = 7;    // The original text for this token
   optional string ner               = 8;    // The word's NER tag
+  optional string coarseNER         = 62;   // The word's coarse NER tag
+  optional string fineGrainedNER    = 63;   // The word's fine-grained NER tag
   optional string normalizedNER     = 9;    // The word's normalized NER tag
   optional string lemma             = 10;   // The word's lemma
   optional uint32 beginChar         = 11;   // The character offset begin, in the document
@@ -144,6 +154,7 @@ message Token {
   optional uint32    headWordIndex  = 26;   // The index of the head word of this word.
   optional Operator  operator       = 27;   // If this is an operator, which one is it and what is its scope (as per Natural Logic)?
   optional Polarity  polarity       = 28;   // The polarity of this word, according to Natural Logic
+  optional string    polarity_dir   = 39;   // The polarity of this word, either "up", "down", or "flat"
   optional Span      span           = 29;   // The span of a leaf node of a tree
   optional string    sentiment      = 30;   // The final sentiment of the sentence
   optional int32     quotationIndex = 31;   // The index of the quotation this token refers to
@@ -153,6 +164,7 @@ message Token {
   optional string conllUMisc        = 35;
   optional MapStringString conllUSecondaryDeps = 36;
   optional string   wikipediaEntity = 37;
+  optional bool     isNewline = 38;
 
 
   // Fields set by other annotators in CoreNLP
@@ -170,6 +182,9 @@ message Token {
   optional string sectionAuthor   = 57;
   optional string sectionDate     = 58;
   optional string sectionEndLabel = 59;
+
+  // French tokens have parents
+  optional string parent          = 61;
   
 
   // Fields in the CoreLabel java class that are moved elsewhere
@@ -451,6 +466,7 @@ message NERMention {
   optional string entityType                    = 6;
   optional Timex  timex                         = 7;
   optional string wikipediaEntity               = 8;
+  optional string gender                        = 9;
 }
 
 //

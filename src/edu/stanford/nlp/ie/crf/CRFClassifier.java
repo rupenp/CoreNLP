@@ -159,7 +159,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
   /**
    * Name of default serialized classifier resource to look for in a jar file.
    */
-  public static final String DEFAULT_CLASSIFIER = "/edu/stanford/nlp/models/ner/english.all.3class.distsim.crf.ser.gz";
+  public static final String DEFAULT_CLASSIFIER = "edu/stanford/nlp/models/ner/english.all.3class.distsim.crf.ser.gz";
   private static final boolean VERBOSE = false;
 
   /**
@@ -993,7 +993,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
         featureValArr = makeDatumUsingEmbedding(info, loc, featureFactories, pInfo, featuresC, windowCliques);
       } else {
         for (Clique c : windowCliques) {
-          for (FeatureFactory featureFactory : featureFactories) {
+          for (FeatureFactory<IN> featureFactory : featureFactories) {
             featuresC.addAll(featureFactory.getCliqueFeatures(pInfo, loc, c)); //todo useless copy because of typing reasons
           }
         }
@@ -1087,7 +1087,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
     if (flags.prependEmbedding) {
       int additionalFeatureCount = 0;
       for (Clique c : windowCliques) {
-        for (FeatureFactory featureFactory : featureFactories) {
+        for (FeatureFactory<IN> featureFactory : featureFactories) {
           Collection<String> fCol = featureFactory.getCliqueFeatures(pInfo, loc, c); //todo useless copy because of typing reasons
           featuresC.addAll(fCol);
           additionalFeatureCount += fCol.size();
@@ -1414,7 +1414,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
    */
   public void printFirstOrderProbs(String filename, DocumentReaderAndWriter<IN> readerAndWriter) {
     // only for the OCR data does this matter
-    flags.ocrTrain = false;
+    // flags.ocrTrain = false;
 
     ObjectBank<List<IN>> docs = makeObjectBankFromFile(filename, readerAndWriter);
     printFirstOrderProbsDocuments(docs);
@@ -1440,7 +1440,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
    */
   public void printFactorTable(String filename, DocumentReaderAndWriter<IN> readerAndWriter) {
     // only for the OCR data does this matter
-    flags.ocrTrain = false;
+    // flags.ocrTrain = false;
 
     ObjectBank<List<IN>> docs = makeObjectBankFromFile(filename, readerAndWriter);
     printFactorTableDocuments(docs);
@@ -1463,12 +1463,11 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
    * Want to make arbitrary probability queries? Then this is the method for
    * you. Given the filename, it reads it in and breaks it into documents, and
    * then makes a CRFCliqueTree for each document. you can then ask the clique
-   * tree for marginals and conditional probabilities of almost anything you
-   * want.
+   * tree for marginals and conditional probabilities of almost anything you want.
    */
   public List<CRFCliqueTree<String>> getCliqueTrees(String filename, DocumentReaderAndWriter<IN> readerAndWriter) {
     // only for the OCR data does this matter
-    flags.ocrTrain = false;
+    // flags.ocrTrain = false;
 
     List<CRFCliqueTree<String>> cts = new ArrayList<>();
     ObjectBank<List<IN>> docs = makeObjectBankFromFile(filename, readerAndWriter);
@@ -1967,10 +1966,10 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
       minimizer = new SGDWithAdaGradAndFOBOS<>(
               flags.initRate, lambda, flags.SGDPasses, flags.stochasticBatchSize,
               flags.priorType, flags.priorAlpha, flags.useAdaDelta, flags.useAdaDiff, flags.adaGradEps, flags.adaDeltaRho);
-      ((SGDWithAdaGradAndFOBOS) minimizer).terminateOnEvalImprovement(flags.terminateOnEvalImprovement);
-      ((SGDWithAdaGradAndFOBOS) minimizer).terminateOnAvgImprovement(flags.terminateOnAvgImprovement, flags.tolerance);
-      ((SGDWithAdaGradAndFOBOS) minimizer).setTerminateOnEvalImprovementNumOfEpoch(flags.terminateOnEvalImprovementNumOfEpoch);
-      ((SGDWithAdaGradAndFOBOS) minimizer).suppressTestPrompt(flags.suppressTestDebug);
+      ((SGDWithAdaGradAndFOBOS<?>) minimizer).terminateOnEvalImprovement(flags.terminateOnEvalImprovement);
+      ((SGDWithAdaGradAndFOBOS<?>) minimizer).terminateOnAvgImprovement(flags.terminateOnAvgImprovement, flags.tolerance);
+      ((SGDWithAdaGradAndFOBOS<?>) minimizer).setTerminateOnEvalImprovementNumOfEpoch(flags.terminateOnEvalImprovementNumOfEpoch);
+      ((SGDWithAdaGradAndFOBOS<?>) minimizer).suppressTestPrompt(flags.suppressTestDebug);
     } else if (flags.useSGDtoQN) {
       minimizer = new SGDToQNMinimizer(flags.initialGain, flags.stochasticBatchSize,
                                        flags.SGDPasses, flags.QNPasses, flags.SGD2QNhessSamples,
@@ -2112,7 +2111,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
     }
   }
 
-  protected static void saveProcessedData(List datums, String filename) {
+  protected static void saveProcessedData(List<?> datums, String filename) {
     log.info("Saving processed data of size " + datums.size() + " to serialized file...");
     ObjectOutputStream oos = null;
     try {
@@ -2277,7 +2276,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
     }
     featureFactories = Generics.newArrayList();
     for (int ff = 1; ff < featureFactoryName.length - 1; ++ff) {
-      FeatureFactory featureFactory = (edu.stanford.nlp.sequences.FeatureFactory<IN>) Class.forName(featureFactoryName[1]).newInstance();
+      FeatureFactory<IN> featureFactory = (FeatureFactory<IN>) Class.forName(featureFactoryName[1]).newInstance();
       featureFactory.init(flags);
       featureFactories.add(featureFactory);
     }
@@ -2382,7 +2381,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
     }
 
     pw.printf("<featureFactory>");
-    for (FeatureFactory featureFactory : featureFactories) {
+    for (FeatureFactory<IN> featureFactory : featureFactories) {
       pw.printf(" %s ", featureFactory.getClass().getName());
     }
     pw.printf("</featureFactory>%n");
@@ -2547,7 +2546,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
       // objects doesn't seem to work.  The resulting classifier
       // doesn't have the lexicon (distsim object) correctly saved.  So now custom write the list
       oos.writeObject(featureFactories.size());
-      for (FeatureFactory ff : featureFactories) {
+      for (FeatureFactory<IN> ff : featureFactories) {
         oos.writeObject(ff);
       }
       oos.writeInt(windowSize);
@@ -2603,7 +2602,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
 //      }
     } else if (featureFactory instanceof FeatureFactory) {
       featureFactories = Generics.newArrayList();
-      featureFactories.add((FeatureFactory) featureFactory);
+      featureFactories.add((FeatureFactory<IN>) featureFactory);
 //      System.err.println(((NERFeatureFactory) featureFactory).describeDistsimLexicon()); // XXXX
     } else if (featureFactory instanceof Integer) {
       // this is the current format (2014) since writing list didn't work (see note in serializeClassifier).
@@ -2615,7 +2614,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
           throw new RuntimeIOException("Should have FeatureFactory but got " + featureFactory.getClass());
         }
 //        System.err.println("FF #" + i + ": " + ((NERFeatureFactory) featureFactory).describeDistsimLexicon()); // XXXX
-        featureFactories.add((FeatureFactory) featureFactory);
+        featureFactories.add((FeatureFactory<IN>) featureFactory);
       }
     }
 
@@ -2653,7 +2652,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
    * WHICH HAS A SERIALIZED CLASSIFIER STORED INSIDE IT.
    */
   public void loadDefaultClassifier() {
-    loadJarClassifier(DEFAULT_CLASSIFIER, null);
+    loadClassifierNoExceptions(DEFAULT_CLASSIFIER);
   }
 
   public void loadTagIndex() {
@@ -2830,7 +2829,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
    * WHICH HAS A SERIALIZED CLASSIFIER STORED INSIDE IT.
    */
   public void loadDefaultClassifier(Properties props) {
-    loadJarClassifier(DEFAULT_CLASSIFIER, props);
+    loadClassifierNoExceptions(DEFAULT_CLASSIFIER, props);
   }
 
   /**
@@ -2858,21 +2857,7 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
     crf.loadDefaultClassifier(props);
     return crf;
   }
-
-  /**
-   * Used to load a classifier stored as a resource inside a jar file. THIS
-   * FUNCTION WILL ONLY WORK IF THE CODE WAS LOADED FROM A JAR FILE WHICH HAS A
-   * SERIALIZED CLASSIFIER STORED INSIDE IT.
-   *
-   * @param resourceName Name of classifier resource inside the jar file.
-   * @return A CRFClassifier stored in the jar file
-   */
-  public static <INN extends CoreMap> CRFClassifier<INN> getJarClassifier(String resourceName, Properties props) {
-    CRFClassifier<INN> crf = new CRFClassifier<>();
-    crf.loadJarClassifier(resourceName, props);
-    return crf;
-  }
-
+  
   /**
    * Loads a CRF classifier from a filepath, and returns it.
    *
@@ -3003,7 +2988,8 @@ public class CRFClassifier<IN extends CoreMap> extends AbstractSequenceClassifie
         throw new RuntimeException("error loading " + loadTextPath, e);
       }
     } else if (crf.flags.loadJarClassifier != null) {
-      crf.loadJarClassifier(crf.flags.loadJarClassifier, props);
+      // legacy option support
+      crf.loadClassifierNoExceptions(crf.flags.loadJarClassifier, props);
     } else if (crf.flags.trainFile != null || crf.flags.trainFileList != null) {
       Timing timing = new Timing();
       // temporarily unlimited size of knownLCWords

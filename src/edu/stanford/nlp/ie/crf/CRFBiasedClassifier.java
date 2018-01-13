@@ -1,5 +1,7 @@
-package edu.stanford.nlp.ie.crf; 
-import edu.stanford.nlp.util.logging.Redwood;
+package edu.stanford.nlp.ie.crf;
+
+import java.util.*;
+import java.util.function.DoubleUnaryOperator;
 
 import edu.stanford.nlp.ling.CoreAnnotations;
 import edu.stanford.nlp.ling.CoreLabel;
@@ -10,12 +12,10 @@ import edu.stanford.nlp.sequences.DocumentReaderAndWriter;
 import edu.stanford.nlp.sequences.FeatureFactory;
 import edu.stanford.nlp.sequences.SeqClassifierFlags;
 import edu.stanford.nlp.util.CoreMap;
-import java.util.function.Function;
 import edu.stanford.nlp.util.Generics;
 import edu.stanford.nlp.util.PaddedList;
 import edu.stanford.nlp.util.StringUtils;
-
-import java.util.*;
+import edu.stanford.nlp.util.logging.Redwood;
 
 /**
  * CRFBiasedClassifier is used to adjust the precision-recall tradeoff
@@ -27,10 +27,9 @@ import java.util.*;
  * with {@link CRFClassifier} and supports most command-line parameters
  * available in {@link CRFClassifier}.  In addition to this,
  * CRFBiasedClassifier also interprets the parameter -classBias, as in:
- * <p><code>
- * java -server -mx500m edu.stanford.nlp.ie.crf.CRFBiasedClassifier -loadClassifier model.gz -testFile test.txt -classBias A:0.5,B:1.5
- * </code>
- * <p>
+ *
+ * {@code java -server -mx500m edu.stanford.nlp.ie.crf.CRFBiasedClassifier -loadClassifier model.gz -testFile test.txt -classBias A:0.5,B:1.5 }
+ *
  * The command above sets a bias of 0.5 towards class A and a bias of
  * 1.5 towards class B. These biases (which internally are treated as
  * feature weights in the log-linear model underpinning the CRF
@@ -45,7 +44,7 @@ import java.util.*;
 public class CRFBiasedClassifier<IN extends CoreMap> extends CRFClassifier<IN>  {
 
   /** A logger for this class */
-  private static Redwood.RedwoodChannels log = Redwood.channels(CRFBiasedClassifier.class);
+  private static final Redwood.RedwoodChannels log = Redwood.channels(CRFBiasedClassifier.class);
 
   private static final String BIAS = "@@@DECODING_CLASS_BIAS@@@";
   private boolean testTime = false;
@@ -91,7 +90,7 @@ public class CRFBiasedClassifier<IN extends CoreMap> extends CRFClassifier<IN>  
     return new CRFDatum<>(features, new CRFLabel(labels), null);
   }
 
-  void addBiasFeature() {
+  private void addBiasFeature() {
     if(!featureIndex.contains(BIAS)) {
       featureIndex.add(BIAS);
       double[][] newWeights = new double[weights.length+1][];
@@ -120,19 +119,19 @@ public class CRFBiasedClassifier<IN extends CoreMap> extends CRFClassifier<IN>  
     return l;
   }
 
-  class CRFBiasedClassifierOptimizer implements Function<Double,Double>  {
+  class CRFBiasedClassifierOptimizer implements DoubleUnaryOperator  {
     CRFBiasedClassifier<IN> crf;
-    Function<Double, Double> evalFunction;
+    DoubleUnaryOperator evalFunction;
 
-    CRFBiasedClassifierOptimizer(CRFBiasedClassifier<IN> c, Function<Double, Double> e) {
+    CRFBiasedClassifierOptimizer(CRFBiasedClassifier<IN> c, DoubleUnaryOperator e) {
       crf = c;
       evalFunction = e;
     }
 
     @Override
-    public Double apply(Double w) {
+    public double applyAsDouble(double w) {
       crf.setBiasWeight(0,w);
-      return evalFunction.apply(w);
+      return evalFunction.applyAsDouble(w);
     }
   }
 
@@ -142,7 +141,7 @@ public class CRFBiasedClassifier<IN extends CoreMap> extends CRFClassifier<IN>  
    * (class of index 0), and is thus only useful for binary classification
    * problems.
    */
-  public void adjustBias(List<List<IN>> develData, Function<Double,Double> evalFunction, double low, double high) {
+  public void adjustBias(List<List<IN>> develData, DoubleUnaryOperator evalFunction, double low, double high) {
     LineSearcher ls = new GoldenSectionLineSearch(true,1e-2,low,high);
     CRFBiasedClassifierOptimizer optimizer = new CRFBiasedClassifierOptimizer(this, evalFunction);
     double optVal = ls.minimize(optimizer);
@@ -152,12 +151,7 @@ public class CRFBiasedClassifier<IN extends CoreMap> extends CRFClassifier<IN>  
 
   /** The main method, which is essentially the same as in CRFClassifier. See the class documentation. */
   public static void main(String[] args) throws Exception {
-    log.info("CRFBiasedClassifier invoked at " + new Date()
-            + " with arguments:");
-    for (String arg : args) {
-      log.info(" " + arg);
-    }
-    log.info();
+    StringUtils.logInvocationString(log, args);
 
     Properties props = StringUtils.argsToProperties(args);
     CRFBiasedClassifier<CoreLabel> crf = new CRFBiasedClassifier<>(props);
@@ -167,7 +161,8 @@ public class CRFBiasedClassifier<IN extends CoreMap> extends CRFClassifier<IN>  
     if (loadPath != null) {
       crf.loadClassifierNoExceptions(loadPath, props);
     } else if (crf.flags.loadJarClassifier != null) {
-      crf.loadJarClassifier(crf.flags.loadJarClassifier, props);
+      // legacy support of old option
+      crf.loadClassifierNoExceptions(crf.flags.loadJarClassifier, props);
     } else {
       crf.loadDefaultClassifier();
     }

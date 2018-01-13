@@ -46,7 +46,7 @@ import edu.stanford.nlp.util.*;
  * <li>Back references: {@code \captureid} </li>
  * <li>Value binding for groups: {@code [pattern] => [value]}.
  *   Value for matched expression can be accessed using {@code m.groupValue()}
- *   <br></br>Example: {@code ( one => 1 | two => 2 | three => 3 | ...)}
+ *   <br>Example: {@code ( one => 1 | two => 2 | three => 3 | ...)}
  * </li>
  * </ul>
  *
@@ -180,17 +180,15 @@ public class TokenSequencePattern extends SequencePattern<CoreMap> {
    * @param string Regular expression to be compiled
    * @return Compiled TokenSequencePattern
    */
-  public static TokenSequencePattern compile(Env env, String string)
-  {
+  public static TokenSequencePattern compile(Env env, String string) {
     try {
 //      SequencePattern.PatternExpr nodeSequencePattern = TokenSequenceParser.parseSequence(env, string);
 //      return new TokenSequencePattern(string, nodeSequencePattern);
       // TODO: Check token sequence parser?
       Pair<PatternExpr, SequenceMatchAction<CoreMap>> p = env.parser.parseSequenceWithAction(env, string);
       return new TokenSequencePattern(string, p.first(), p.second());
-
     } catch (Exception ex) {
-      throw new RuntimeException("When parsing " + string + "\t\t" + ex);
+      throw new RuntimeException("Error when parsing " + string, ex);
     }
   }
 

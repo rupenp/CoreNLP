@@ -1,5 +1,6 @@
 package edu.stanford.nlp.pipeline;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -20,9 +21,7 @@ import edu.stanford.nlp.ling.CoreAnnotation;
 import edu.stanford.nlp.ling.CoreAnnotations;
 import edu.stanford.nlp.semgraph.SemanticGraphCoreAnnotations;
 import edu.stanford.nlp.trees.HeadFinder;
-import edu.stanford.nlp.trees.SemanticHeadFinder;
 import edu.stanford.nlp.trees.TreeCoreAnnotations;
-import edu.stanford.nlp.trees.international.pennchinese.ChineseSemanticHeadFinder;
 import edu.stanford.nlp.util.ArraySet;
 import edu.stanford.nlp.util.CoreMap;
 import edu.stanford.nlp.util.PropertiesUtils;
@@ -31,35 +30,35 @@ import edu.stanford.nlp.util.logging.Redwood;
 /**
  * This class adds mention information to an Annotation.
  *
- * After annotation each sentence will have a List<Mention> representing the Mentions in the sentence
+ * After annotation each sentence will have a {@code List<Mention>} representing the Mentions in the sentence.
  *
- * the List<Mention> containing the Mentions will be put under the annotation
+ * The {@code List<Mention>} containing the Mentions will be put under the annotation
  * {@link edu.stanford.nlp.coref.CorefCoreAnnotations.CorefMentionsAnnotation}.
  *
  * @author heeyoung
  * @author Jason Bolton
  */
 
-public class MentionAnnotator extends TextAnnotationCreator implements Annotator  {
+public class CorefMentionAnnotator extends TextAnnotationCreator implements Annotator  {
 
   /** A logger for this class */
-  private static Redwood.RedwoodChannels log = Redwood.channels(MentionAnnotator.class);
+  private static final Redwood.RedwoodChannels log = Redwood.channels(CorefMentionAnnotator.class);
 
-  HeadFinder headFinder;
-  CorefMentionFinder md;
-  String mdName;
-  Dictionaries dictionaries;
-  Properties corefProperties;
+  private HeadFinder headFinder;
+  private CorefMentionFinder md;
+  private String mdName;
+  private Dictionaries dictionaries;
+  private Properties corefProperties;
 
-  Set<Class<? extends CoreAnnotation>> mentionAnnotatorRequirements = new HashSet<>();
+  private final Set<Class<? extends CoreAnnotation>> mentionAnnotatorRequirements = new HashSet<>();
 
-  public MentionAnnotator(Properties props) {
+  public CorefMentionAnnotator(Properties props) {
     try {
       corefProperties = props;
       //System.out.println("corefProperties: "+corefProperties);
       dictionaries = new Dictionaries(props);
       //System.out.println("got dictionaries");
-      headFinder = getHeadFinder(props);
+      headFinder = CorefProperties.getHeadFinder(props);
       //System.out.println("got head finder");
       md = getMentionFinder(props, headFinder);
       log.info("Using mention detector type: "+mdName);
@@ -76,8 +75,8 @@ public class MentionAnnotator extends TextAnnotationCreator implements Annotator
 
       ));
     } catch (Exception e) {
-      e.printStackTrace();
       log.info("Error with building coref mention annotator!");
+      log.info(e);
     }
   }
 
@@ -100,11 +99,13 @@ public class MentionAnnotator extends TextAnnotationCreator implements Annotator
       corefProperties.setProperty("removeNestedMentions", "true");
     }
     List<List<Mention>> mentions = md.findMentions(annotation, dictionaries, corefProperties);
+    annotation.set(CorefCoreAnnotations.CorefMentionsAnnotation.class , new ArrayList<Mention>());
     int mentionIndex = 0;
     int currIndex = 0;
     for (CoreMap sentence : sentences) {
       List<Mention> mentionsForThisSentence = mentions.get(currIndex);
       sentence.set(CorefCoreAnnotations.CorefMentionsAnnotation.class, mentionsForThisSentence);
+      annotation.get(CorefCoreAnnotations.CorefMentionsAnnotation.class).addAll(mentionsForThisSentence);
       // increment to next list of mentions
       currIndex++;
       // assign latest mentionID
@@ -112,15 +113,6 @@ public class MentionAnnotator extends TextAnnotationCreator implements Annotator
         m.mentionID = mentionIndex;
         mentionIndex++;
       }
-    }
-  }
-
-  private static HeadFinder getHeadFinder(Properties props) {
-    Locale lang = CorefProperties.getLanguage(props);
-    if(lang == Locale.ENGLISH) return new SemanticHeadFinder();
-    else if(lang == Locale.CHINESE) return new ChineseSemanticHeadFinder();
-    else {
-      throw new RuntimeException("Invalid language setting: cannot load HeadFinder");
     }
   }
 
