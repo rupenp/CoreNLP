@@ -1,5 +1,8 @@
 package edu.stanford.nlp.pipeline;
 
+import java.util.*;
+import java.util.function.Predicate;
+
 import edu.stanford.nlp.ling.CoreAnnotation;
 import edu.stanford.nlp.ling.CoreAnnotations;
 import edu.stanford.nlp.ling.CoreLabel;
@@ -8,8 +11,8 @@ import edu.stanford.nlp.time.Timex;
 import edu.stanford.nlp.util.*;
 import edu.stanford.nlp.util.logging.Redwood;
 
-import java.util.*;
-import java.util.function.Function;
+import static edu.stanford.nlp.util.logging.Redwood.Util.logf;
+
 
 /**
  * Annotator that marks entity mentions in a document.
@@ -21,11 +24,11 @@ import java.util.function.Function;
  *   <li> Times (identified by TimeAnnotator) </li>
  *   <li> Measurements (identified by ???) </li>
  *   </ul>
- *   </li>
+ * </li>
  * </ul>
  *
  * Each sentence is annotated with a list of the mentions
- * (MentionsAnnotation as a list of CoreMap).
+ * (MentionsAnnotation is a list of CoreMap).
  *
  * @author Angel Chang
  */
@@ -45,7 +48,7 @@ public class EntityMentionsAnnotator implements Annotator {
   // TODO: Provide properties
   public static PropertiesUtils.Property[] SUPPORTED_PROPERTIES = new PropertiesUtils.Property[]{};
 
-  /** the CoreAnnotation keys to use for this entity mentions annotator **/
+  /** The CoreAnnotation keys to use for this entity mentions annotator. */
   private Class<? extends CoreAnnotation<String>> nerCoreAnnotationClass =
       CoreAnnotations.NamedEntityTagAnnotation.class;
   private Class<? extends CoreAnnotation<String>> nerNormalizedCoreAnnotationClass =
@@ -54,7 +57,7 @@ public class EntityMentionsAnnotator implements Annotator {
       CoreAnnotations.MentionsAnnotation.class;
 
   /** A logger for this class */
-  private static Redwood.RedwoodChannels log = Redwood.channels(EntityMentionsAnnotator.class);
+  private static final Redwood.RedwoodChannels log = Redwood.channels(EntityMentionsAnnotator.class);
 
   public EntityMentionsAnnotator() {
     // defaults
@@ -105,7 +108,19 @@ public class EntityMentionsAnnotator implements Annotator {
     }
   }
 
-  private final Function<Pair<CoreLabel,CoreLabel>, Boolean> IS_TOKENS_COMPATIBLE = in -> {
+  private List<CoreLabel> tokensForCharacters(List<CoreLabel> tokens, int charBegin, int charEnd) {
+    assert charBegin >= 0;
+    List<CoreLabel> segment = Generics.newArrayList();
+    for(CoreLabel token: tokens) {
+      if (token.endPosition() < charBegin || token.beginPosition() >= charEnd) {
+        continue;
+      }
+      segment.add(token);
+    }
+    return segment;
+  }
+
+  private final Predicate<Pair<CoreLabel, CoreLabel>> IS_TOKENS_COMPATIBLE = in -> {
     // First argument is the current token
     CoreLabel cur = in.first;
     // Second argument the previous token
@@ -141,9 +156,22 @@ public class EntityMentionsAnnotator implements Annotator {
     return true;
   };
 
+  private static Optional<CoreMap> overlapsWithMention(CoreMap needle, List<CoreMap> haystack) {
+    List<CoreLabel> tokens = needle.get(CoreAnnotations.TokensAnnotation.class);
+    int charBegin = tokens.get(0).beginPosition();
+    int charEnd = tokens.get(tokens.size()-1).endPosition();
+
+    return (haystack.stream().filter(mention_ -> {
+      List<CoreLabel> tokens_ = mention_.get(CoreAnnotations.TokensAnnotation.class);
+      int charBegin_ = tokens_.get(0).beginPosition();
+      int charEnd_ = tokens_.get(tokens_.size()-1).endPosition();
+      // Check overlap
+      return !(charBegin_ > charEnd || charEnd_ < charBegin);
+    }).findFirst());
+  }
+
   @Override
   public void annotate(Annotation annotation) {
-
     List<CoreMap> allMentions = new ArrayList<>();
     List<CoreMap> sentences = annotation.get(CoreAnnotations.SentencesAnnotation.class);
 
@@ -200,6 +228,7 @@ public class EntityMentionsAnnotator implements Annotator {
       if (mentions != null) {
         allMentions.addAll(mentions);
       }
+
       sentenceIndex++;
     }
 
@@ -210,7 +239,6 @@ public class EntityMentionsAnnotator implements Annotator {
 
     annotation.set(mentionsCoreAnnotationClass, allMentions);
   }
-
 
   private void addAcronyms(Annotation ann, List<CoreMap> mentions) {
     // Find all the organizations in a document

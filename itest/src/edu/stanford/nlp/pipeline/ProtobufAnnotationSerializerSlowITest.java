@@ -10,7 +10,10 @@ import edu.stanford.nlp.semgraph.SemanticGraphCoreAnnotations;
 import edu.stanford.nlp.trees.TreeCoreAnnotations;
 import edu.stanford.nlp.util.CoreMap;
 import edu.stanford.nlp.util.Pair;
+import edu.stanford.nlp.util.logging.Redwood;
 import edu.stanford.nlp.util.StringUtils;
+
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.io.*;
@@ -48,6 +51,11 @@ public class ProtobufAnnotationSerializerSlowITest {
   public static final String prideAndPrejudiceFirstSentence =
       "It is a truth universally acknowledged, that a single man in possession  of a good fortune, must be in want of a wife.";
 
+  @BeforeClass
+  public static void setUp() {
+    // suppress StanfordCoreNLP info messages for this test
+    System.err.close();
+  }
 
   protected Annotation mkAnnotation() {
     AnnotationPipeline pipeline = new StanfordCoreNLP(new Properties());
@@ -127,8 +135,8 @@ public class ProtobufAnnotationSerializerSlowITest {
       for (int i = 0; i < doc.get(CoreAnnotations.TokensAnnotation.class).size(); i++) {
         CoreLabel token = doc.get(CoreAnnotations.TokensAnnotation.class).get(i);
         // Remove null gender
-        if (token.get(MachineReadingAnnotations.GenderAnnotation.class) == null) {
-          token.remove(MachineReadingAnnotations.GenderAnnotation.class);
+        if (token.get(CoreAnnotations.GenderAnnotation.class) == null) {
+          token.remove(CoreAnnotations.GenderAnnotation.class);
         }
       }
     }
@@ -226,6 +234,15 @@ public class ProtobufAnnotationSerializerSlowITest {
 
   private void testAnnotators(String annotators, Pair<String,String> additionalProperty) {
     try {
+      // check if this list of annotators is valid
+      // if annotators need to be added by ensurePrerequisiteAnnotators, just return
+      String[] annotatorsAsArray = annotators.split(",");
+      Properties emptyProps = new Properties();
+      String completeAnnotatorsList =
+          StanfordCoreNLP.ensurePrerequisiteAnnotators(annotatorsAsArray, emptyProps);
+      if (completeAnnotatorsList.split(",").length != annotatorsAsArray.length) {
+        return;
+      }
       AnnotationSerializer serializer = new ProtobufAnnotationSerializer();
       // Write
       Annotation doc = new StanfordCoreNLP(new Properties(){{
@@ -313,7 +330,7 @@ public class ProtobufAnnotationSerializerSlowITest {
 
     // Check size
     assertTrue("" + compressedProto.length, compressedProto.length < 391000);
-    assertTrue("" + uncompressedProto.length, uncompressedProto.length < 2100000);
+    assertTrue("" + uncompressedProto.length, uncompressedProto.length < 2550000);
   }
 
   @Test
@@ -431,7 +448,7 @@ public class ProtobufAnnotationSerializerSlowITest {
 
   @Test
   public void testGender() {
-    testAnnotators("tokenize,ssplit,pos,lemma,ner,gender");
+    testAnnotators("tokenize,ssplit,pos,lemma,ner,entitymentions,gender");
   }
 
 

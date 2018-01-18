@@ -1,6 +1,6 @@
 //
 // StanfordCoreNLP -- a suite of NLP tools.
-// Copyright (c) 2009-2011 The Board of Trustees of
+// Copyright (c) 2009-2017 The Board of Trustees of
 // The Leland Stanford Junior University. All Rights Reserved.
 //
 // This program is free software; you can redistribute it and/or
@@ -19,8 +19,8 @@
 //
 // For more information, bug reports, fixes, contact:
 //    Christopher Manning
-//    Dept of Computer Science, Gates 1A
-//    Stanford CA 94305-9010
+//    Dept of Computer Science, Gates 2A
+//    Stanford CA 94305-9020
 //    USA
 //
 
@@ -68,7 +68,7 @@ import org.json.JSONObject;
  * then other sequence model style annotation can be used to add things like
  * lemmas, POS tags, and named entities.  These are returned as a list of CoreLabels.
  * Other analysis components build and store parse trees, dependency graphs, etc.
- * <p>
+ *
  * This class is designed to apply multiple Annotators
  * to an Annotation.  The idea is that you first
  * build up the pipeline by adding Annotators, and then
@@ -80,9 +80,9 @@ import org.json.JSONObject;
  * </pre><br/>
  * Please see the package level javadoc for sample usage
  * and a more complete description.
- * <p>
+ *
  * The main entry point for the API is StanfordCoreNLP.process() .
- * <p>
+ *
  * <i>Implementation note:</i> There are other annotation pipelines, but they
  * don't extend this one. Look for classes that implement Annotator and which
  * have "Pipeline" in their name.
@@ -125,7 +125,14 @@ public class StanfordCoreNLP extends AnnotationPipeline  {
     public int hashCode() {
       return Objects.hash(name, signature);
     }
-  }
+
+    @Override
+    public String toString() {
+      return "AnnotatorSignature{name='" + name +
+              "', signature='" + signature + "'}";
+    }
+
+  } // end static class AnnotatorSignature
 
 
   /**
@@ -329,6 +336,10 @@ public class StanfordCoreNLP extends AnnotationPipeline  {
     return PropertiesUtils.getBool(properties, "output.printSingletonEntities", false);
   }
 
+  public boolean getIncludeText() {
+    return PropertiesUtils.getBool(properties, "includeText", false);
+  }
+
   /**
    * Take a collection of requested annotators, and produce a list of annotators such that all of the
    * prerequisites for each of the annotators in the input is met.
@@ -404,7 +415,8 @@ public class StanfordCoreNLP extends AnnotationPipeline  {
 
     // Tweak the properties, if necessary
     // (set the mention annotator to use dependency trees, if appropriate)
-    if (orderedAnnotators.contains(Annotator.STANFORD_MENTION) && !orderedAnnotators.contains(Annotator.STANFORD_PARSE) &&
+    if ((orderedAnnotators.contains(Annotator.STANFORD_COREF_MENTION) || orderedAnnotators.contains(Annotator.STANFORD_COREF))
+        && !orderedAnnotators.contains(Annotator.STANFORD_PARSE) &&
         !props.containsKey("coref.md.type")) {
       props.setProperty("coref.md.type", "dep");
     }
@@ -544,10 +556,10 @@ public class StanfordCoreNLP extends AnnotationPipeline  {
     pool.put(STANFORD_TOKENSREGEX, (props, impl) -> impl.tokensregex(props, STANFORD_TOKENSREGEX));
     pool.put(STANFORD_REGEXNER, (props, impl) -> impl.tokensRegexNER(props, STANFORD_REGEXNER));
     pool.put(STANFORD_ENTITY_MENTIONS, (props, impl) -> impl.entityMentions(props, STANFORD_ENTITY_MENTIONS));
-    pool.put(STANFORD_GENDER, (props, impl) -> impl.gender(props, false));
+    pool.put(STANFORD_GENDER, (props, impl) -> impl.gender(props, STANFORD_GENDER));
     pool.put(STANFORD_TRUECASE, (props, impl) -> impl.trueCase(props));
     pool.put(STANFORD_PARSE, (props, impl) -> impl.parse(props));
-    pool.put(STANFORD_MENTION, (props, impl) -> impl.mention(props));
+    pool.put(STANFORD_COREF_MENTION, (props, impl) -> impl.corefMention(props));
     pool.put(STANFORD_DETERMINISTIC_COREF, (props, impl) -> impl.dcoref(props));
     pool.put(STANFORD_COREF, (props, impl) -> impl.coref(props));
     pool.put(STANFORD_RELATION, (props, impl) -> impl.relations(props));
@@ -608,13 +620,14 @@ public class StanfordCoreNLP extends AnnotationPipeline  {
 
 
   /**
-   * Construct the default annotator pool from the passed properties, and overwriting annotations which have changed
-   * since the last
+   * Construct the default annotator pool from the passed in properties, and overwriting annotators which have changed
+   * since the last call.
+   *
    * @param inputProps
    * @param annotatorImplementation
    * @return A populated AnnotatorPool
    */
-  public static AnnotatorPool constructAnnotatorPool(final Properties inputProps, final AnnotatorImplementations annotatorImplementation) {
+  private static AnnotatorPool constructAnnotatorPool(final Properties inputProps, final AnnotatorImplementations annotatorImplementation) {
     AnnotatorPool pool = new AnnotatorPool();
     for (Map.Entry<String, BiFunction<Properties, AnnotatorImplementations, Annotator>> entry : getNamedAnnotators().entrySet()) {
       AnnotatorSignature key = new AnnotatorSignature(entry.getKey(), PropertiesUtils.getSignature(entry.getKey(), inputProps));
@@ -642,6 +655,13 @@ public class StanfordCoreNLP extends AnnotationPipeline  {
     }
   }
 
+  /** annotate the CoreDocument wrapper **/
+  public void annotate(CoreDocument document) {
+    // annotate the underlying Annotation
+    this.annotate(document.annotationDocument);
+    // wrap the sentences and entity mentions post annotation
+    document.wrapAnnotations();
+  }
 
   /** {@inheritDoc} */
   @Override
@@ -737,6 +757,7 @@ public class StanfordCoreNLP extends AnnotationPipeline  {
 
   /**
    * Displays the output of all annotators in JSON format.
+   *
    * @param annotation Contains the output of all annotators
    * @param w The Writer to send the output to
    * @throws IOException
@@ -750,6 +771,8 @@ public class StanfordCoreNLP extends AnnotationPipeline  {
 
   /**
    * Displays the output of many annotators in CoNLL format.
+   * (Only used by CoreNLPServelet.)
+   *
    * @param annotation Contains the output of all annotators
    * @param w The Writer to send the output to
    * @throws IOException
@@ -763,6 +786,7 @@ public class StanfordCoreNLP extends AnnotationPipeline  {
 
   /**
    * Displays the output of all annotators in XML format.
+   *
    * @param annotation Contains the output of all annotators
    * @param os The output stream
    * @throws IOException
@@ -932,7 +956,7 @@ public class StanfordCoreNLP extends AnnotationPipeline  {
       if (line == null || line.equalsIgnoreCase("q")) {
         break;
       }
-      if (line.length() > 0) {
+      if ( ! line.isEmpty()) {
         Annotation anno = pipeline.process(line);
         switch (outputFormat) {
         case XML:
@@ -1011,6 +1035,7 @@ public class StanfordCoreNLP extends AnnotationPipeline  {
     final String serializerClass = properties.getProperty("serializer", GenericAnnotationSerializer.class.getName());
     final String outputSerializerClass = properties.getProperty("outputSerializer", serializerClass);
     final String outputSerializerName = (serializerClass.equals(outputSerializerClass))? "serializer":"outputSerializer";
+    final String outputFormatOptions = properties.getProperty("outputFormatOptions");
 
     return (Annotation annotation, OutputStream fos) -> {
       try {
@@ -1025,7 +1050,7 @@ public class StanfordCoreNLP extends AnnotationPipeline  {
             break;
           }
           case CONLL: {
-            new CoNLLOutputter().print(annotation, fos, outputOptions);
+            new CoNLLOutputter(outputFormatOptions).print(annotation, fos, outputOptions);
             break;
           }
           case TEXT: {
@@ -1404,9 +1429,9 @@ public class StanfordCoreNLP extends AnnotationPipeline  {
           timing.done(logger, "Annotating file " + file.getAbsoluteFile());
           Throwable ex = finishedAnnotation.get(CoreAnnotations.ExceptionAnnotation.class);
           if (ex == null) {
-            try{
-            //--Output File
-	            OutputStream fos = new BufferedOutputStream(new FileOutputStream(finalOutputFilename));
+            try {
+              //--Output File
+              OutputStream fos = new BufferedOutputStream(new FileOutputStream(finalOutputFilename));
               print.accept(finishedAnnotation, fos);
               fos.close();
             } catch(IOException e) {

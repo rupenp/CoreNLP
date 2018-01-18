@@ -290,7 +290,7 @@ public class RegexNERSequenceClassifier extends AbstractSequenceClassifier<CoreL
 
       try {
         for (String str : regexes) {
-          if(ignoreCase) tokens.add(Pattern.compile(str, Pattern.CASE_INSENSITIVE));
+          if(ignoreCase) tokens.add(Pattern.compile(str, Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE));
           else tokens.add(Pattern.compile(str));
         }
       } catch (PatternSyntaxException e) {
@@ -364,6 +364,7 @@ public class RegexNERSequenceClassifier extends AbstractSequenceClassifier<CoreL
   @Override
   public void serializeClassifier(String serializePath) {}
 
+  @Override
   public void serializeClassifier(ObjectOutputStream oos) {}
 
   @Override

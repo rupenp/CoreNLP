@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 
 import edu.stanford.nlp.coref.CorefCoreAnnotations;
-
 import edu.stanford.nlp.coref.data.CorefChain;
 import edu.stanford.nlp.ie.machinereading.structure.EntityMention;
 import edu.stanford.nlp.ie.machinereading.structure.MachineReadingAnnotations;
@@ -20,11 +19,13 @@ import edu.stanford.nlp.ling.CoreAnnotations;
 import edu.stanford.nlp.ling.CoreLabel;
 import edu.stanford.nlp.naturalli.NaturalLogicAnnotations;
 import edu.stanford.nlp.naturalli.OpenIE;
+import edu.stanford.nlp.neural.rnn.RNNCoreAnnotations;
 import edu.stanford.nlp.sentiment.SentimentCoreAnnotations;
 import edu.stanford.nlp.trees.Tree;
 import edu.stanford.nlp.trees.TreeCoreAnnotations;
 import edu.stanford.nlp.semgraph.SemanticGraphCoreAnnotations;
 import edu.stanford.nlp.util.CoreMap;
+import edu.stanford.nlp.util.StringUtils;
 
 /**
  * @author John Bauer
@@ -84,15 +85,17 @@ public class TextOutputter extends AnnotationOutputter {
     // display each sentence in this annotation
     if (sentences != null) {
       for (int i = 0, sz = sentences.size(); i < sz; i ++) {
+        pw.println();
         CoreMap sentence = sentences.get(i);
         List<CoreLabel> tokens = sentence.get(CoreAnnotations.TokensAnnotation.class);
         String sentiment = sentence.get(SentimentCoreAnnotations.SentimentClass.class);
+        String piece;
         if (sentiment == null) {
-          sentiment = "";
+          piece = "";
         } else {
-          sentiment = ", sentiment: " + sentiment;
+          piece = ", sentiment: " + sentiment;
         }
-        pw.printf("Sentence #%d (%d tokens%s):%n", (i + 1), tokens.size(), sentiment);
+        pw.printf("Sentence #%d (%d tokens%s):%n", (i + 1), tokens.size(), piece);
 
         String text = sentence.get(CoreAnnotations.TextAnnotation.class);
         pw.println(text);
@@ -102,6 +105,9 @@ public class TextOutputter extends AnnotationOutputter {
                 "Text", "PartOfSpeech", "Lemma", "Answer", "NamedEntityTag",
                 "CharacterOffsetBegin", "CharacterOffsetEnd", "NormalizedNamedEntityTag",
                 "Timex", "TrueCase", "TrueCaseText", "SentimentClass", "WikipediaEntity" };
+
+        pw.println();
+        pw.println("Tokens:");
         for (CoreLabel token: tokens) {
           pw.print(token.toShorterString(tokenAnnotations));
           pw.println();
@@ -110,7 +116,24 @@ public class TextOutputter extends AnnotationOutputter {
         // display the parse tree for this sentence
         Tree tree = sentence.get(TreeCoreAnnotations.TreeAnnotation.class);
         if (tree != null) {
+          pw.println();
+          pw.println("Constituency parse: ");
           options.constituentTreePrinter.printTree(tree, pw);
+        }
+
+        // display sentiment tree if they asked for sentiment
+        if ( ! StringUtils.isNullOrEmpty(sentiment)) {
+          pw.println();
+          pw.println("Sentiment-annotated binary tree:");
+          Tree sTree = sentence.get(SentimentCoreAnnotations.SentimentAnnotatedTree.class);
+          if (sTree != null) {
+            sTree.pennPrint(pw,
+                label -> (label.value() == null) ? "" :
+                    (RNNCoreAnnotations.getPredictedClass(label) != -1) ?
+                        (label.value() + "|sentiment=" + RNNCoreAnnotations.getPredictedClass(label) + "|prob=" +
+                            (String.format("%.3f", RNNCoreAnnotations.getPredictedClassProb(label)))) : label.value());
+            pw.println();
+          }
         }
 
         // It is possible to turn off the semantic graphs, in which
@@ -118,7 +141,22 @@ public class TextOutputter extends AnnotationOutputter {
         // printer.  This might be relevant if using CoreNLP for a
         // language which doesn't have dependencies, for example.
         if (sentence.get(SemanticGraphCoreAnnotations.EnhancedPlusPlusDependenciesAnnotation.class) != null) {
+          pw.println();
+          pw.println("Dependency Parse (enhanced plus plus dependencies):");
           pw.print(sentence.get(SemanticGraphCoreAnnotations.EnhancedPlusPlusDependenciesAnnotation.class).toList());
+          pw.println();
+        }
+
+        // display the entity mentions
+        List<CoreMap> entityMentions = sentence.get(CoreAnnotations.MentionsAnnotation.class);
+        if (entityMentions != null) {
+          pw.println("Extracted the following NER entity mentions:");
+          for (CoreMap entityMention : entityMentions) {
+            if (entityMention.get(CoreAnnotations.EntityTypeAnnotation.class) != null) {
+              pw.println(entityMention.get(CoreAnnotations.TextAnnotation.class) + "\t"
+                  + entityMention.get(CoreAnnotations.EntityTypeAnnotation.class));
+            }
+          }
           pw.println();
         }
 
@@ -143,7 +181,7 @@ public class TextOutputter extends AnnotationOutputter {
 
         // display OpenIE triples
         Collection<RelationTriple> openieTriples = sentence.get(NaturalLogicAnnotations.RelationTriplesAnnotation.class);
-        if (openieTriples != null && openieTriples.size() > 0) {
+        if (openieTriples != null && ! openieTriples.isEmpty()) {
           pw.println("Extracted the following Open IE triples:");
           for (RelationTriple triple : openieTriples) {
             pw.println(OpenIE.tripleToString(triple, docId, sentence));
@@ -152,13 +190,12 @@ public class TextOutputter extends AnnotationOutputter {
 
         // display KBP triples
         Collection<RelationTriple> kbpTriples = sentence.get(CoreAnnotations.KBPTriplesAnnotation.class);
-        if (kbpTriples != null && kbpTriples.size() > 0) {
+        if (kbpTriples != null && ! kbpTriples.isEmpty()) {
           pw.println("Extracted the following KBP triples:");
           for (RelationTriple triple : kbpTriples) {
-            pw.println(triple.toString());
+            pw.println(triple);
           }
         }
-
       }
     } else {
       List<CoreLabel> tokens = annotation.get(CoreAnnotations.TokensAnnotation.class);
@@ -167,7 +204,7 @@ public class TextOutputter extends AnnotationOutputter {
       for (CoreLabel token : tokens) {
         int tokenCharBegin = token.get(CoreAnnotations.CharacterOffsetBeginAnnotation.class);
         int tokenCharEnd = token.get(CoreAnnotations.CharacterOffsetEndAnnotation.class);
-        pw.println("[Text="+token.word()+" CharacterOffsetBegin="+tokenCharBegin+" CharacterOffsetEnd="+tokenCharEnd+"]");
+        pw.println("[Text="+token.word()+" CharacterOffsetBegin="+tokenCharBegin+" CharacterOffsetEnd="+tokenCharEnd+ ']');
       }
     }
 
